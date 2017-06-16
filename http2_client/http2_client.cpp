@@ -1,9 +1,21 @@
-/*
- * http2_client.cpp
+/*******************************************************************************
+ *  This file is part of http2_client.
  *
- *  Created on: 2017年6月15日
- *      Author: lidanyang
- */
+ *  http2_client is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  http2_client is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *******************************************************************************
+ * Author: Lidanyang  <simonarthur2012@gmail.com>
+ ******************************************************************************/
 
 #include "http2_client.h"
 #include "http2.h"
@@ -19,6 +31,7 @@ Request::Request(uint32_t stream_id, const Variant& uri, zval* data, const Varia
 	this->callback = callback;
 	this->type = type;
 	this->buffer = swString_new(8192);
+	this->response = php::newObject("http2_client_response");
 }
 
 Request::~Request()
@@ -51,13 +64,25 @@ HTTP_METHOD Request::getType()
 	return type;
 }
 
-void Request::runCallback(const Object& client, const Object& response)
+void Request::runCallback(const Object& client)
 {
-	Array params;
-	params.append(client);
-	params.append(response);
+	if(this->type == HTTP_STREAM)
+	{
+		Object http2_client_stream = this->callback;
+		Variant callback = http2_client_stream.get("receive");
+		Args params;
+		params.append(client);
+		params.append(this->response);
+		php::call(callback, params);
+	}
+	else
+	{
+		Args params;
+		params.append(client);
+		params.append(this->response);
+		php::call(this->callback, params);
+	}
 
-	php::call(this->callback, params);
 }
 
 /******** Request end ****************/
@@ -160,24 +185,11 @@ void Http2Client::disconnect(const Object& client)
 
 		if(request->getType() == HTTP_STREAM)
 		{
-			Object http2_client_stream = request->getCallback();
-			Variant callback = http2_client_stream.get("receive");
-			Object response = php::newObject("http2_client_response");
-			response.set("statusCode", -1);
-			Array params;
-			params.append(response);
-			php::call(callback, params);
+			request->runCallback(client);
 		}
 		else
 		{
-			Variant callback = request->getCallback();
-			Object response = php::newObject("http2_client_response");
-			response.set("statusCode", -1);
-
-			Array params;
-			params.append(response);
-
-			php::call(callback, params);
+			request->runCallback(client);
 		}
 		delete request;
 		request = NULL;
@@ -211,16 +223,14 @@ static sw_inline void http2_add_header(nghttp2_nv *headers, string key, string v
 static int http2_client_parse_header(Http2Client* client, Request *request , int flags, char *in, size_t inlen)
 {
     nghttp2_hd_inflater *inflater = client->getInflater();
-
+    Object zresponse = request->getResponse();
     if (flags & SW_HTTP2_FLAG_PRIORITY)
     {
         in += 5;
         inlen -= 5;
     }
 
-    zval *zheader;
-    SW_MAKE_STD_ZVAL(zheader);
-    array_init(zheader);
+    Array headers;
 
     ssize_t rv;
     for (;;)
@@ -249,8 +259,8 @@ static int http2_client_parse_header(Http2Client* client, Request *request , int
             {
                 if (strncasecmp((char *) nv.name + 1, "status", nv.namelen -1) == 0)
                 {
-                	request->setStatus(atoi((char *) nv.value));
-                	//zresponse.set("statusCode", atoi((char *) nv.value));
+                	//request->setStatus(atoi((char *) nv.value));
+                	zresponse.set("status", atoi((char *) nv.value));
                     continue;
                 }
             }
@@ -265,7 +275,9 @@ static int http2_client_parse_header(Http2Client* client, Request *request , int
 //                }
 //            }
 //#endif
-            sw_add_assoc_stringl_ex(zheader, (char *) nv.name, nv.namelen + 1, (char *) nv.value, nv.valuelen, 1);
+            Variant key = Variant((char*)nv.name, nv.namelen);
+            Variant value = Variant((char*)nv.value, nv.valuelen);
+            headers.set(key.toCString(), value);
         }
 
         if (inflate_flags & NGHTTP2_HD_INFLATE_FINAL)
@@ -279,10 +291,8 @@ static int http2_client_parse_header(Http2Client* client, Request *request , int
             break;
         }
     }
-//    Variant header = Variant(zheader);
-//    zresponse.set("headers", header);
-//    sw_zval_ptr_dtor(&zheader);
-    request->setHeaders(zheader);
+    zresponse.set("headers", headers);
+    //request->setHeaders(zheader);
     rv = nghttp2_hd_inflate_change_table_size(inflater, 4096);
     if (rv != 0)
     {
@@ -363,7 +373,6 @@ static int http2_client_build_header(Object& zobject, Request *req, char *buffer
         else
         {
             http2_add_header(&nv[3], "cookie", formstr.toString());
-            smart_str_free(&formstr_s);
         }
     }
 
@@ -650,29 +659,19 @@ void http2_client_onFrame(Object& zobject, Object& socket, swClient* cli, char* 
 
 	if(request->getType() == HTTP_STREAM && type == SW_HTTP2_TYPE_DATA)
 	{
-		Object http2_client_stream = request->getCallback();
-		Variant callback = http2_client_stream.get("receive");
-		Object response = php::newObject("http2_client_response");
-		response.set("body", Variant(request->buffer->str , request->buffer->length));
+		Object response = request->getResponse();
+		response.set("body", Variant(request->buffer->str, request->buffer->length));
 
-		Args params;
-		params.append(response);
-		php::call(callback, params);
+		request->runCallback(zobject);
 
 		swString_clear(request->buffer);
 	}
 	else if(request->getType() != HTTP_STREAM && (flags & SW_HTTP2_FLAG_END_STREAM))
 	{
-		Variant callback = request->getCallback();
-		Object response = php::newObject("http2_client_response");
-		Variant header = Variant(request->getHeaders());
-		response.set("status", request->getStatus());
-		response.set("headers", header);
-		response.set("body", Variant(request->buffer->str , request->buffer->length));
+		Object& response = request->getResponse();
+		request->getResponse().set("body", Variant(request->buffer->str, request->buffer->length));
 
-		Args params;
-		params.append(response);
-		php::call(callback, params);
+		request->runCallback(zobject);
 
 		client->delRequest(stream_id);
 	}

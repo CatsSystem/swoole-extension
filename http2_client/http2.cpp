@@ -1,18 +1,21 @@
-/*
- +----------------------------------------------------------------------+
- | Swoole                                                               |
- +----------------------------------------------------------------------+
- | This source file is subject to version 2.0 of the Apache license,    |
- | that is bundled with this package in the file LICENSE, and is        |
- | available through the world-wide-web at the following url:           |
- | http://www.apache.org/licenses/LICENSE-2.0.html                      |
- | If you did not receive a copy of the Apache2.0 license and are unable|
- | to obtain it through the world-wide-web, please send a note to       |
- | license@swoole.com so we can mail you a copy immediately.            |
- +----------------------------------------------------------------------+
- | Author: Tianfeng Han  <mikan.tenny@gmail.com>                        |
- +----------------------------------------------------------------------+
- */
+/*******************************************************************************
+ *  This file is part of http2_client.
+ *
+ *  http2_client is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  http2_client is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *******************************************************************************
+ * Author: Lidanyang  <simonarthur2012@gmail.com>
+ ******************************************************************************/
 
 #include "swoole.h"
 #include "Connection.h"

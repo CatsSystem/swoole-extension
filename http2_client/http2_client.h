@@ -1,9 +1,21 @@
-/*
- * http2_client.h
+/*******************************************************************************
+ *  This file is part of http2_client.
  *
- *  Created on: 2017年6月15日
- *      Author: lidanyang
- */
+ *  http2_client is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  http2_client is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *******************************************************************************
+ * Author: Lidanyang  <simonarthur2012@gmail.com>
+ ******************************************************************************/
 
 #ifndef HTTP2_CLIENT_HTTP2_CLIENT_H_
 #define HTTP2_CLIENT_HTTP2_CLIENT_H_
@@ -42,15 +54,16 @@ public:
 	zval* getData();
 	Variant& getCallback();
 	HTTP_METHOD getType();
-	Object& getResponse();
 
-	void runCallback(const Object& client, const Object& response);
+	void runCallback(const Object& client);
 
-	void setStatus(int status){this->status = status;}
-	int getStatus(){return status;}
+//	void setStatus(int status){this->status = status;}
+//	int getStatus(){return status;}
+//
+//	void setHeaders(zval* header){this->headers = header;}
+//	zval* getHeaders(){return headers;}
 
-	void setHeaders(zval* header){this->headers = header;}
-	zval* getHeaders(){return headers;}
+	Object& getResponse(){return this->response;}
 
 public:
 	swString* 	buffer;
@@ -61,8 +74,9 @@ private:
 	Variant 	uri;
 	zval* 		data;
 	Variant 	callback;
-	int 		status = 0;
-	zval* 		headers = NULL;
+//	int 		status = 0;
+//	zval* 		headers = NULL;
+	Object 		response;
 };
 
 class Http2Client
