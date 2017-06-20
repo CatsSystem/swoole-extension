@@ -306,9 +306,6 @@ PHPX_EXTENSION()
         http2_client->addMethod(PHPX_ME(http2_client, onConnect));
         http2_client->addMethod(PHPX_ME(http2_client, onError));
         http2_client->addMethod(PHPX_ME(http2_client, onClose));
-        http2_client->addConstant("HTTP2_CLIENT_OFFLINE", HTTP2_CLIENT_OFFLINE);
-        http2_client->addConstant("HTTP2_CLIENT_TIMEOUT", HTTP2_CLIENT_TIMEOUT);
-        http2_client->addConstant("HTTP2_CLIENT_RST_STREAM", HTTP2_CLIENT_RST_STREAM);
         extension->registerClass(http2_client);
 
         Class *http2_client_stream = new Class("http2_client_stream");
