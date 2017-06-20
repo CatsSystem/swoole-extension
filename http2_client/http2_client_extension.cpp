@@ -25,15 +25,14 @@
 
 #include "http2.h"
 #include "http2_client.h"
-extern "C"{
-	#include "swoole.h"
-	#include "php_swoole.h"
+extern "C" {
+#include "swoole.h"
+#include "php_swoole.h"
 }
 using namespace php;
 using namespace std;
 
-struct TimeoutData
-{
+struct TimeoutData {
 	Request* request;
 	Object* client;
 	Http2Client* h2cli;
@@ -41,8 +40,7 @@ struct TimeoutData
 
 typedef struct TimeoutData TimeoutData;
 
-static void http2_client_onRequestTimeout(swTimer *timer, swTimer_node *tnode)
-{
+static void http2_client_onRequestTimeout(swTimer *timer, swTimer_node *tnode) {
 	TimeoutData* data = (TimeoutData *) tnode->data;
 	Object* client = data->client;
 	Request* request = data->request;
@@ -53,59 +51,54 @@ static void http2_client_onRequestTimeout(swTimer *timer, swTimer_node *tnode)
 	http2client->delRequest(request->getStreamId());
 }
 
-PHPX_METHOD(http2_client, construct)
-{
-    if (args.count() < 3)
-    {
-        error(E_ERROR, "invalid parameters.");
-        return;
-    }
-    Variant host = args[0];
-    long port   = args[1].toInt();
-    bool is_ssl = args[2].toBool();
-
-    int sock_type;
-	if(is_ssl)
-	{
-		sock_type = php::constant("SWOOLE_SOCK_TCP").toInt()|php::constant("SWOOLE_SSL").toInt();
+PHPX_METHOD(http2_client, construct) {
+	if (args.count() < 3) {
+		error(E_ERROR, "invalid parameters.");
+		return;
 	}
-	else
-	{
+	Variant host = args[0];
+	long port = args[1].toInt();
+	bool is_ssl = args[2].toBool();
+
+	int sock_type;
+	if (is_ssl) {
+		sock_type = php::constant("SWOOLE_SOCK_TCP").toInt()
+				| php::constant("SWOOLE_SSL").toInt();
+	} else {
 		sock_type = php::constant("SWOOLE_SOCK_TCP").toInt();
 	}
-	Object swoole_client = php::newObject("swoole_client", sock_type, php::constant("SWOOLE_SOCK_ASYNC"));
+	Object swoole_client = php::newObject("swoole_client", sock_type,
+			php::constant("SWOOLE_SOCK_ASYNC"));
 	Http2Client* client = new Http2Client();
 
 	_this.set("socket", swoole_client);
 	_this.oSet("client", "Http2Client", client);
-    _this.set("host", host);
-    _this.set("port", port);
-    _this.set("connected", false);
-    _this.set("ssl", is_ssl);
+	_this.set("host", host);
+	_this.set("port", port);
+	_this.set("connected", false);
+	_this.set("ssl", is_ssl);
 
-    Array header, cookie;
-    _this.set("headers", header);
-    _this.set("cookies", cookie);
+	Array header, cookie;
+	_this.set("headers", header);
+	_this.set("cookies", cookie);
 }
 
-PHPX_METHOD(http2_client, onReceive)
-{
+PHPX_METHOD(http2_client, onReceive) {
 	Object socket = _this.get("socket");
-	swClient *cli = (swClient*)swoole_get_object(socket.ptr());
+	swClient *cli = (swClient*) swoole_get_object(socket.ptr());
 	http2_client_onFrame(_this, socket, cli, args[1].toCString());
 }
 
-PHPX_METHOD(http2_client, onConnect)
-{
+PHPX_METHOD(http2_client, onConnect) {
 	_this.set("connected", true);
 	Object socket = _this.get("socket");
 	socket.exec("send", "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
-	swClient *cli = (swClient*)swoole_get_object(socket.ptr());
-    cli->open_length_check = 1;
-    cli->protocol.get_package_length = swHttp2_get_frame_length;
-    cli->protocol.package_length_size = SW_HTTP2_FRAME_HEADER_SIZE;
-    cli->protocol.onPackage = php_swoole_client_onPackage;
-    http2_client_send_setting(cli);
+	swClient *cli = (swClient*) swoole_get_object(socket.ptr());
+	cli->open_length_check = 1;
+	cli->protocol.get_package_length = swHttp2_get_frame_length;
+	cli->protocol.package_length_size = SW_HTTP2_FRAME_HEADER_SIZE;
+	cli->protocol.onPackage = php_swoole_client_onPackage;
+	http2_client_send_setting(cli);
 	Variant callback = _this.get("connect");
 	Args params;
 	params.append(_this);
@@ -113,8 +106,7 @@ PHPX_METHOD(http2_client, onConnect)
 	php::call(callback, params);
 }
 
-PHPX_METHOD(http2_client, onError)
-{
+PHPX_METHOD(http2_client, onError) {
 	_this.set("connected", false);
 	Object socket = _this.get("socket");
 	Variant callback = _this.get("connect");
@@ -124,17 +116,15 @@ PHPX_METHOD(http2_client, onError)
 	php::call(callback, params);
 }
 
-PHPX_METHOD(http2_client, onClose)
-{
+PHPX_METHOD(http2_client, onClose) {
 	_this.set("connected", false);
 	printf("onClose\n");
-	Http2Client* client = _this.oGet<Http2Client>("client","Http2Client");
+	Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
 	client->disconnect(_this);
 }
 
-PHPX_METHOD(http2_client, connect)
-{
-    float timeout = args[0].toFloat();
+PHPX_METHOD(http2_client, connect) {
+	float timeout = args[0].toFloat();
 	Variant callback = args[1];
 
 	_this.set("connect", callback);
@@ -159,215 +149,197 @@ PHPX_METHOD(http2_client, connect)
 	socket.exec("connect", _this.get("host"), _this.get("port"), timeout);
 }
 
-PHPX_METHOD(http2_client, on)
-{
+PHPX_METHOD(http2_client, on) {
 	string name = args[0].toString();
 
 	Variant callback = args[1];
 	_this.set(name.c_str(), callback);
 }
 
-PHPX_METHOD(http2_client, post)
-{
+PHPX_METHOD(http2_client, post) {
 	bool connected = _this.get("connected").toBool();
-    if(!connected)
-    {
-        retval = false;
-        return;
-    }
-    Variant path 	= args[0];
-    Variant data 	= args[1];
-    int 	timeout = args[2].toInt();
-    Variant callback = args[3];
-    Http2Client* client = _this.oGet<Http2Client>("client","Http2Client");
-    Request* new_request = new Request(client->grantStreamId(), path, data.ptr(), callback, HTTP_POST);
+	if (!connected) {
+		retval = false;
+		return;
+	}
+	Variant path = args[0];
+	Variant data = args[1];
+	int timeout = args[2].toInt();
+	Variant callback = args[3];
+	Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
+	Request* new_request = new Request(client->grantStreamId(), path,
+			data.ptr(), callback, HTTP_POST);
 
-    TimeoutData* timeout_data = new TimeoutData();
-    timeout_data->client = &_this;
-    timeout_data->request = new_request;
-    timeout_data->h2cli = client;
-
-    php_swoole_check_timer((int) (timeout * 1000));
-    new_request->timer = SwooleG.timer.add(&SwooleG.timer, (int) (timeout * 1000), 0, (void*)timeout_data, http2_client_onRequestTimeout);
-
-    client->addRequest(new_request);
-
-    Object socket = _this.get("socket");
-	swClient *cli = (swClient*)swoole_get_object(socket.ptr());
-
-	http2_client_send_request(_this, cli, new_request);
-}
-
-PHPX_METHOD(http2_client, get)
-{
-    bool connected = _this.get("connected").toBool();
-    if(!connected)
-    {
-        retval = false;
-        return;
-    }
-    Variant path 	= args[0];
-    int 	timeout = args[1].toInt();
-    Variant callback = args[2];
-
-    Http2Client* client = _this.oGet<Http2Client>("client","Http2Client");
-    Request* new_request = new Request(client->grantStreamId(), path, NULL, callback, HTTP_GET);
-
-    TimeoutData* timeout_data = new TimeoutData();
+	TimeoutData* timeout_data = new TimeoutData();
 	timeout_data->client = &_this;
 	timeout_data->request = new_request;
 	timeout_data->h2cli = client;
 
-    php_swoole_check_timer((int) (timeout * 1000));
-    new_request->timer = SwooleG.timer.add(&SwooleG.timer, (int) (timeout * 1000), 0, (void*)timeout_data, http2_client_onRequestTimeout);
+	php_swoole_check_timer((int) (timeout * 1000));
+	new_request->timer = SwooleG.timer.add(&SwooleG.timer,
+			(int) (timeout * 1000), 0, (void*) timeout_data,
+			http2_client_onRequestTimeout);
 
-    client->addRequest(new_request);
-    Object socket = _this.get("socket");
-	swClient* cli = (swClient*)swoole_get_object(socket.ptr());
+	client->addRequest(new_request);
+
+	Object socket = _this.get("socket");
+	swClient *cli = (swClient*) swoole_get_object(socket.ptr());
+
 	http2_client_send_request(_this, cli, new_request);
 }
 
-PHPX_METHOD(http2_client, openStream)
-{
+PHPX_METHOD(http2_client, get) {
 	bool connected = _this.get("connected").toBool();
-    if(!connected)
-    {
-        retval = false;
-        return;
-    }
-    Http2Client* client = _this.oGet<Http2Client>("client","Http2Client");
+	if (!connected) {
+		retval = false;
+		return;
+	}
+	Variant path = args[0];
+	int timeout = args[1].toInt();
+	Variant callback = args[2];
 
-    string 	path 	= args[0].toString();
-    uint32_t stream_id = client->grantStreamId();
-    Object stream = php::newObject("http2_client_stream");
-    stream.exec("init", _this, Variant((long)stream_id));
-    Request* new_request = new Request(stream_id, path, NULL, stream, HTTP_STREAM);
-    client->addRequest(new_request);
+	Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
+	Request* new_request = new Request(client->grantStreamId(), path, NULL,
+			callback, HTTP_GET);
 
-    Object socket = _this.get("socket");
-	swClient *cli = (swClient*)swoole_get_object(socket.ptr());
+	TimeoutData* timeout_data = new TimeoutData();
+	timeout_data->client = &_this;
+	timeout_data->request = new_request;
+	timeout_data->h2cli = client;
+
+	php_swoole_check_timer((int) (timeout * 1000));
+	new_request->timer = SwooleG.timer.add(&SwooleG.timer,
+			(int) (timeout * 1000), 0, (void*) timeout_data,
+			http2_client_onRequestTimeout);
+
+	client->addRequest(new_request);
+	Object socket = _this.get("socket");
+	swClient* cli = (swClient*) swoole_get_object(socket.ptr());
+	http2_client_send_request(_this, cli, new_request);
+}
+
+PHPX_METHOD(http2_client, openStream) {
+	bool connected = _this.get("connected").toBool();
+	if (!connected) {
+		retval = false;
+		return;
+	}
+	Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
+
+	string path = args[0].toString();
+	uint32_t stream_id = client->grantStreamId();
+	Object stream = php::newObject("http2_client_stream");
+	stream.exec("init", _this, Variant((long) stream_id));
+	Request* new_request = new Request(stream_id, path, NULL, stream,
+			HTTP_STREAM);
+	client->addRequest(new_request);
+
+	Object socket = _this.get("socket");
+	swClient *cli = (swClient*) swoole_get_object(socket.ptr());
 
 	http2_client_send_request(_this, cli, new_request);
 
-    retval = stream;
+	retval = stream;
 }
 
-PHPX_METHOD(http2_client, close)
-{
+PHPX_METHOD(http2_client, close) {
 	_this.set("connected", false);
 	Object socket = _this.get("socket");
 	socket.exec("close");
 }
 
-PHPX_METHOD(http2_client_stream, init)
-{
+PHPX_METHOD(http2_client_stream, init) {
 	Object client = args[0];
 	_this.set("stream_id", args[1].toInt());
 	_this.set("client", client);
 }
 
-PHPX_METHOD(http2_client_stream, on)
-{
+PHPX_METHOD(http2_client_stream, on) {
 	String name = String(args[0].ptr());
-	if(name.equals("receive") || name.equals("Receive"))
-	{
+	if (name.equals("receive") || name.equals("Receive")) {
 		Variant callback = args[1];
 		_this.set("receive", callback);
-	}
-	else
-	{
+	} else {
 		error(E_ERROR, "Only can set receive callback!");
 		return;
 	}
 }
 
-PHPX_METHOD(http2_client_stream, push)
-{
-	Variant data 	= args[0];
+PHPX_METHOD(http2_client_stream, push) {
+	Variant data = args[0];
 	Object client = _this.get("client");
-    Object socket = client.get("socket");
-	swClient *cli = (swClient*)swoole_get_object(socket.ptr());
+	Object socket = client.get("socket");
+	swClient *cli = (swClient*) swoole_get_object(socket.ptr());
 
 	http2_client_push_request(cli, _this.get("stream_id").toInt(), data.ptr());
 }
 
-PHPX_METHOD(http2_client_stream, close)
-{
+PHPX_METHOD(http2_client_stream, close) {
 	Object socket = _this.get("socket");
-	swClient *cli = (swClient*)swoole_get_object(socket.ptr());
+	swClient *cli = (swClient*) swoole_get_object(socket.ptr());
 
 	http2_client_close_stream(cli, _this.get("stream_id").toInt());
-	Http2Client* client = _this.oGet<Http2Client>("client","Http2Client");
+	Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
 	client->delRequest(_this.get("stream_id").toInt());
 }
 
-PHPX_METHOD(http2_client_response, __construct)
-{
+PHPX_METHOD(http2_client_response, __construct) {
 	Array header;
 	_this.set("statusCode", 0);
 	_this.set("headers", header);
 	_this.set("body", "");
 }
 
-void Http2Client_dtor(zend_resource *res)
-{
-    Http2Client *s = static_cast<Http2Client *>(res->ptr);
-    delete s;
+void Http2Client_dtor(zend_resource *res) {
+	Http2Client *s = static_cast<Http2Client *>(res->ptr);
+	delete s;
 }
 
 PHPX_EXTENSION()
 {
-    Extension *extension = new Extension("http2_client", "0.0.1");
-    extension->onStart = [extension]() noexcept
-    {
-        Class *http2_client = new Class("http2_client");
-        http2_client->addMethod("__construct", http2_client_construct, CONSTRUCT);
-        http2_client->addMethod(PHPX_ME(http2_client, on));
-        http2_client->addMethod(PHPX_ME(http2_client, connect));
-        http2_client->addMethod(PHPX_ME(http2_client, post));
-        http2_client->addMethod(PHPX_ME(http2_client, get));
-        http2_client->addMethod(PHPX_ME(http2_client, openStream));
-        http2_client->addMethod(PHPX_ME(http2_client, close));
-        http2_client->addMethod(PHPX_ME(http2_client, onReceive));
-        http2_client->addMethod(PHPX_ME(http2_client, onConnect));
-        http2_client->addMethod(PHPX_ME(http2_client, onError));
-        http2_client->addMethod(PHPX_ME(http2_client, onClose));
-        http2_client->addConstant("HTTP2_CLIENT_OFFLINE", HTTP2_CLIENT_OFFLINE);
-        http2_client->addConstant("HTTP2_CLIENT_TIMEOUT", HTTP2_CLIENT_TIMEOUT);
-        http2_client->addConstant("HTTP2_CLIENT_RST_STREAM", HTTP2_CLIENT_RST_STREAM);
-        extension->registerClass(http2_client);
+	Extension *extension = new Extension("http2_client", "0.0.1");
+	extension->onStart =
+			[extension]() noexcept
+			{
+				Class *http2_client = new Class("http2_client");
+				http2_client->addMethod("__construct", http2_client_construct, CONSTRUCT);
+				http2_client->addMethod(PHPX_ME(http2_client, on));
+				http2_client->addMethod(PHPX_ME(http2_client, connect));
+				http2_client->addMethod(PHPX_ME(http2_client, post));
+				http2_client->addMethod(PHPX_ME(http2_client, get));
+				http2_client->addMethod(PHPX_ME(http2_client, openStream));
+				http2_client->addMethod(PHPX_ME(http2_client, close));
+				http2_client->addMethod(PHPX_ME(http2_client, onReceive));
+				http2_client->addMethod(PHPX_ME(http2_client, onConnect));
+				http2_client->addMethod(PHPX_ME(http2_client, onError));
+				http2_client->addMethod(PHPX_ME(http2_client, onClose));
+				http2_client->addConstant("HTTP2_CLIENT_OFFLINE", HTTP2_CLIENT_OFFLINE);
+				http2_client->addConstant("HTTP2_CLIENT_TIMEOUT", HTTP2_CLIENT_TIMEOUT);
+				http2_client->addConstant("HTTP2_CLIENT_RST_STREAM", HTTP2_CLIENT_RST_STREAM);
+				extension->registerClass(http2_client);
 
-        Class *http2_client_stream = new Class("http2_client_stream");
-        http2_client_stream->addMethod(PHPX_ME(http2_client_stream, init));
-        http2_client_stream->addMethod(PHPX_ME(http2_client_stream, on));
-        http2_client_stream->addMethod(PHPX_ME(http2_client_stream, push));
-        http2_client_stream->addMethod(PHPX_ME(http2_client_stream, close));
-        extension->registerClass(http2_client_stream);
+				Class *http2_client_stream = new Class("http2_client_stream");
+				http2_client_stream->addMethod(PHPX_ME(http2_client_stream, init));
+				http2_client_stream->addMethod(PHPX_ME(http2_client_stream, on));
+				http2_client_stream->addMethod(PHPX_ME(http2_client_stream, push));
+				http2_client_stream->addMethod(PHPX_ME(http2_client_stream, close));
+				extension->registerClass(http2_client_stream);
 
-        Class *http2_client_response = new Class("http2_client_response");
-        http2_client_response->addMethod(PHPX_ME(http2_client_response, __construct) , CONSTRUCT);
-        extension->registerClass(http2_client_response);
+				Class *http2_client_response = new Class("http2_client_response");
+				http2_client_response->addMethod(PHPX_ME(http2_client_response, __construct) , CONSTRUCT);
+				extension->registerClass(http2_client_response);
 
-        extension->registerResource("Http2Client", Http2Client_dtor);
-        extension->registerConstant("HTTP2_CLIENT_OFFLINE", HTTP2_CLIENT_OFFLINE);
-        extension->registerConstant("HTTP2_CLIENT_TIMEOUT", HTTP2_CLIENT_TIMEOUT);
-        extension->registerConstant("HTTP2_CLIENT_RST_STREAM", HTTP2_CLIENT_RST_STREAM);
-    };
+				extension->registerResource("Http2Client", Http2Client_dtor);
+				extension->registerConstant("HTTP2_CLIENT_OFFLINE", HTTP2_CLIENT_OFFLINE);
+				extension->registerConstant("HTTP2_CLIENT_TIMEOUT", HTTP2_CLIENT_TIMEOUT);
+				extension->registerConstant("HTTP2_CLIENT_RST_STREAM", HTTP2_CLIENT_RST_STREAM);
+			};
 
-    extension->require("swoole");
-    extension->info(
-    {
-        "Http2 Client support", "enabled"
-    },
-    {
-        { "author", "Lancelot" },
-        { "version", extension->version },
-        { "date", "2017-06-14" },
-    });
+	extension->require("swoole");
+	extension->info( { "Http2 Client support", "enabled" }, { { "author",
+			"Lancelot" }, { "version", extension->version }, { "date",
+			"2017-06-14" }, });
 
-    return extension;
+	return extension;
 }
-
-
-
 

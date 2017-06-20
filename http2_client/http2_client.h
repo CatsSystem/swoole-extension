@@ -25,15 +25,15 @@
 #include <vector>
 #include <map>
 #include "phpx.h"
-extern "C"{
-	#include "swoole.h"
-	#include "php_swoole.h"
-	#ifdef SW_HAVE_ZLIB
-	#include <zlib.h>
-	extern voidpf php_zlib_alloc(voidpf opaque, uInt items, uInt size);
-	extern void php_zlib_free(voidpf opaque, voidpf address);
-	extern int http_response_uncompress(z_stream *stream, swString *buffer, char *body, int length);
-	#endif
+extern "C" {
+#include "swoole.h"
+#include "php_swoole.h"
+#ifdef SW_HAVE_ZLIB
+#include <zlib.h>
+extern voidpf php_zlib_alloc(voidpf opaque, uInt items, uInt size);
+extern void php_zlib_free(voidpf opaque, voidpf address);
+extern int http_response_uncompress(z_stream *stream, swString *buffer, char *body, int length);
+#endif
 }
 #include <nghttp2/nghttp2.h>
 
@@ -47,83 +47,88 @@ using namespace php;
 #define HTTP2_CLIENT_TIMEOUT  	 -2
 #define HTTP2_CLIENT_RST_STREAM  -3
 
-enum HTTP_METHOD
-{
-	HTTP_GET 	= 1,
-	HTTP_POST 	= 2,
-	HTTP_STREAM = 3
+enum HTTP_METHOD {
+HTTP_GET = 1, HTTP_POST = 2, HTTP_STREAM = 3
 };
 
-class Request
-{
+class Request {
 public:
-	Request(uint32_t stream_id, const Variant& uri, zval* data, const Variant& callback, HTTP_METHOD type);
-	~Request();
+Request(uint32_t stream_id, const Variant& uri, zval* data,
+		const Variant& callback, HTTP_METHOD type);
+~Request();
 
-	uint32_t getStreamId();
-	Variant& getUri();
-	zval* getData();
-	Variant& getCallback();
-	HTTP_METHOD getType();
+uint32_t getStreamId();
+Variant& getUri();
+zval* getData();
+Variant& getCallback();
+HTTP_METHOD getType();
 
-	bool isGzip(){ return this->gzip;}
-	void openGzip(){ this->gzip = 1; }
+bool isGzip() {
+	return this->gzip;
+}
+void openGzip() {
+	this->gzip = 1;
+}
 
-	void runCallback(const Object& client);
-	void runCallback(zval* client);
+void runCallback(const Object& client);
+void runCallback(zval* client);
 
-	Object* getResponse(){return &this->response;}
+Object* getResponse() {
+	return &this->response;
+}
 
 private:
-	uint32_t 	stream_id;
-	HTTP_METHOD type;
-	Variant 	uri;
-	zval* 		data;
-	Variant 	callback;
-	Object 		response;
-	uint8_t 	gzip = 0;
+uint32_t stream_id;
+HTTP_METHOD type;
+Variant uri;
+zval* data;
+Variant callback;
+Object response;
+uint8_t gzip = 0;
 
 public:
-	swString* 	buffer;
-	swTimer_node* 	timer = NULL;
+swString* buffer;
+swTimer_node* timer = NULL;
 #ifdef SW_HAVE_ZLIB
-    z_stream gzip_stream;
-    swString *gzip_buffer = NULL;
+z_stream gzip_stream;
+swString *gzip_buffer = NULL;
 #endif
 };
 
-class Http2Client
-{
+class Http2Client {
 public:
-	Http2Client();
-	~Http2Client();
+Http2Client();
+~Http2Client();
 
-	uint32_t getStreamId();
-	uint32_t grantStreamId();
-	nghttp2_hd_inflater* getInflater();
+uint32_t getStreamId();
+uint32_t grantStreamId();
+nghttp2_hd_inflater* getInflater();
 
-	void addRequest(Request*);
+void addRequest(Request*);
 
-	Request* getRequest(uint32_t stream_id);
+Request* getRequest(uint32_t stream_id);
 
-	void delRequest(uint32_t stream_id);
+void delRequest(uint32_t stream_id);
 
-	void disconnect(const Object& client);
+void disconnect(const Object& client);
 
 public:
-    uint32_t window_size = 0;
-    uint32_t max_concurrent_streams = 0;
-    uint32_t max_frame_size = 0;
-    uint32_t max_header_list_size = 0;
+uint32_t window_size = 0;
+uint32_t max_concurrent_streams = 0;
+uint32_t max_frame_size = 0;
+uint32_t max_header_list_size = 0;
 private:
-	uint32_t 					stream_id;
-    map<uint32_t, Request*>* 	request_map;
-    nghttp2_hd_inflater* 		inflater;
+uint32_t stream_id;
+map<uint32_t, Request*>* request_map;
+nghttp2_hd_inflater* inflater;
 };
 
-void http2_client_onFrame(Object& zobject, Object& socket, swClient* cli, char* buf);
-void http2_client_send_request(Object& zobject, swClient* cli, Request* request);
-void http2_client_push_request(swClient* cli, uint32_t stream_id, zval* post_data);
+void http2_client_onFrame(Object& zobject, Object& socket, swClient* cli,
+	char* buf);
+void http2_client_send_request(Object& zobject, swClient* cli,
+	Request* request);
+void http2_client_push_request(swClient* cli, uint32_t stream_id,
+	zval* post_data);
 void http2_client_close_stream(swClient* cli, uint32_t stream_id);
 void http2_client_send_setting(swClient *cli);
 
