@@ -17,21 +17,19 @@ Example：
 $client = new http2_client("127.0.0.1", "9501", false);
 $client->connect(1, function($client, $errCode){
 	// 根据错误码判断连接是否成功
-  if($errCode != 0)
-  {
-      return;
-  }
-  
-  // get请求，设置 1s 超时
-  $client->get("/get", 1, function($client, $response){
-      if($response->status == 200)
-      {
-          var_dump($response->headers);
-          var_dump($response->body);
-      }
-  });
-  
-  // Stream Push 测试
+	if($errCode != 0)
+	{
+		return;
+	}
+	// get请求，设置 1s 超时
+	$client->get("/get", 1, function($client, $response){
+		if($response->status == 200)
+		{
+			var_dump($response->headers);
+	        var_dump($response->body);
+	    }
+	});
+    // Stream Push 测试
 	$stream = $client->openStream("/test");
 	$stream->on("receive", function($client, $response){
 	    var_dump($response);
