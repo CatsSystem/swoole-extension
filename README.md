@@ -28,12 +28,12 @@ $client->connect(1, function($client, $errCode){
             var_dump($response->headers);
             var_dump($response->body);
         }
-	});
-	// Stream Push 测试
-	$stream = $client->openStream("/test");
-	$stream->on("receive", function($client, $response){
-		var_dump($response);
-	});
+    });
+    // Stream Push 测试
+    $stream = $client->openStream("/test");
+    $stream->on("receive", function($client, $response){
+        var_dump($response);
+    });
 });
 
 ```
