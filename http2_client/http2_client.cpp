@@ -15,6 +15,7 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *******************************************************************************
  * Author: Lidanyang  <simonarthur2012@gmail.com>
+ * Copyright © 2017 Lidanyang <simonarthur2012@gmail.com>
  ******************************************************************************/
 
 #include "http2_client.h"
@@ -37,6 +38,18 @@ Request::Request(uint32_t stream_id, const Variant& uri, zval* data, const Varia
 Request::~Request()
 {
 	swString_free(this->buffer);
+	if(this->timer)
+	{
+		swTimer_del(&SwooleG.timer, this->timer);
+		this->timer = NULL;
+	}
+#ifdef SW_HAVE_ZLIB
+	if(this->gzip && this->gzip_buffer)
+	{
+		swString_free(this->gzip_buffer);
+	}
+#endif
+
 }
 
 uint32_t Request::getStreamId()
@@ -82,7 +95,26 @@ void Request::runCallback(const Object& client)
 		params.append(this->response);
 		php::call(this->callback, params);
 	}
+}
 
+void Request::runCallback(zval* client)
+{
+	if(this->type == HTTP_STREAM)
+	{
+		Object http2_client_stream = this->callback;
+		Variant callback = http2_client_stream.get("receive");
+		Args params;
+		params.append(client);
+		params.append(this->response);
+		php::call(callback, params);
+	}
+	else
+	{
+		Args params;
+		params.append(client);
+		params.append(this->response);
+		php::call(this->callback, params);
+	}
 }
 
 /******** Request end ****************/
@@ -183,6 +215,8 @@ void Http2Client::disconnect(const Object& client)
 		Request* request = request_iter->second;
 		if(!request) continue;
 
+		Object* response = request->getResponse();
+		response->set("status", HTTP2_CLIENT_OFFLINE);
 		if(request->getType() == HTTP_STREAM)
 		{
 			request->runCallback(client);
@@ -206,24 +240,32 @@ static sw_inline void http2_add_header(nghttp2_nv *headers, string key, string v
     headers->valuelen = value.length();
 }
 
-//#ifdef SW_HAVE_ZLIB
-///**
-// * init zlib stream
-// */
-//static void http2_client_init_gzip_stream(http2_client_stream *stream)
-//{
-//    stream->gzip = 1;
-//    memset(&stream->gzip_stream, 0, sizeof(stream->gzip_stream));
-//    stream->gzip_buffer = swString_new(8192);
-//    stream->gzip_stream.zalloc = php_zlib_alloc;
-//    stream->gzip_stream.zfree = php_zlib_free;
-//}
-//#endif
+static sw_inline void http2_add_header(nghttp2_nv *headers, string key, char* value, int len)
+{
+    headers->name = (uchar*) key.c_str();
+    headers->namelen = key.length();
+    headers->value = (uchar*) value;
+    headers->valuelen = len;
+}
+
+#ifdef SW_HAVE_ZLIB
+/**
+ * init zlib stream
+ */
+static void http2_client_init_gzip_stream(Request *request)
+{
+	request->openGzip();
+    memset(&request->gzip_stream, 0, sizeof(request->gzip_stream));
+    request->gzip_buffer = swString_new(8192);
+    request->gzip_stream.zalloc = php_zlib_alloc;
+    request->gzip_stream.zfree = php_zlib_free;
+}
+#endif
 
 static int http2_client_parse_header(Http2Client* client, Request *request , int flags, char *in, size_t inlen)
 {
     nghttp2_hd_inflater *inflater = client->getInflater();
-    Object zresponse = request->getResponse();
+    Object* zresponse = request->getResponse();
     if (flags & SW_HTTP2_FLAG_PRIORITY)
     {
         in += 5;
@@ -259,22 +301,21 @@ static int http2_client_parse_header(Http2Client* client, Request *request , int
             {
                 if (strncasecmp((char *) nv.name + 1, "status", nv.namelen -1) == 0)
                 {
-                	//request->setStatus(atoi((char *) nv.value));
-                	zresponse.set("status", atoi((char *) nv.value));
+                	zresponse->set("status", atoi((char *) nv.value));
                     continue;
                 }
             }
-//#ifdef SW_HAVE_ZLIB
-//            else if (strncasecmp((char *) nv.name, "content-encoding", nv.namelen) == 0 && strncasecmp((char *) nv.value, "gzip", nv.valuelen) == 0)
-//            {
-//                http2_client_init_gzip_stream(stream);
-//                if (Z_OK != inflateInit2(&stream->gzip_stream, MAX_WBITS + 16))
-//                {
-//                    swWarn("inflateInit2() failed.");
-//                    return SW_ERR;
-//                }
-//            }
-//#endif
+#ifdef SW_HAVE_ZLIB
+            else if (strncasecmp((char *) nv.name, "content-encoding", nv.namelen) == 0 && strncasecmp((char *) nv.value, "gzip", nv.valuelen) == 0)
+            {
+                http2_client_init_gzip_stream(request);
+                if (Z_OK != inflateInit2(&request->gzip_stream, MAX_WBITS + 16))
+                {
+                    swWarn("inflateInit2() failed.");
+                    return SW_ERR;
+                }
+            }
+#endif
             Variant key = Variant((char*)nv.name, nv.namelen);
             Variant value = Variant((char*)nv.value, nv.valuelen);
             headers.set(key.toCString(), value);
@@ -291,8 +332,7 @@ static int http2_client_parse_header(Http2Client* client, Request *request , int
             break;
         }
     }
-    zresponse.set("headers", headers);
-    //request->setHeaders(zheader);
+    zresponse->set("headers", headers);
     rv = nghttp2_hd_inflate_change_table_size(inflater, 4096);
     if (rv != 0)
     {
@@ -304,8 +344,6 @@ static int http2_client_parse_header(Http2Client* client, Request *request , int
 
 static int http2_client_build_header(Object& zobject, Request *req, char *buffer, int buffer_len)
 {
-    char *date_str = NULL;
-
     int ret;
     Array zheader = zobject.get("headers");
     int index = 0;
@@ -320,7 +358,8 @@ static int http2_client_build_header(Object& zobject, Request *req, char *buffer
     {
         http2_add_header(&nv[index++], ":method", "POST");
     }
-    http2_add_header(&nv[index++], ":path", req->getUri().toString());
+    char* host = req->getUri().toCString();
+    http2_add_header(&nv[index++], ":path", host, strlen(host));
     if (zobject.get("ssl").toBool())
     {
         http2_add_header(&nv[index++], ":scheme", "https");
@@ -332,7 +371,7 @@ static int http2_client_build_header(Object& zobject, Request *req, char *buffer
     //Host
     index++;
 
-    if (!zheader.isNull())
+    if (!zheader.isNull() && !zheader.empty())
     {
         for (auto i = zheader.begin(); i != zheader.end(); i++)
 		{
@@ -380,7 +419,6 @@ static int http2_client_build_header(Object& zobject, Request *req, char *buffer
     size_t buflen;
     size_t i;
     size_t sum = 0;
-
     nghttp2_hd_deflater *deflater;
     ret = nghttp2_hd_deflate_new(&deflater, 4096);
     if (ret != 0)
@@ -407,13 +445,7 @@ static int http2_client_build_header(Object& zobject, Request *req, char *buffer
         return SW_ERR;
     }
 
-    if (date_str)
-    {
-        efree(date_str);
-    }
-
     nghttp2_hd_deflate_del(deflater);
-
     return rv;
 }
 
@@ -422,13 +454,13 @@ void http2_client_send_request(Object& zobject, swClient* cli, Request* request)
     char buffer[8192];
     zval* post_data = request->getData();
 
-	int n = http2_client_build_header(zobject, request, buffer + SW_HTTP2_FRAME_HEADER_SIZE, sizeof(buffer) - SW_HTTP2_FRAME_HEADER_SIZE TSRMLS_CC);
+	int n = http2_client_build_header(zobject, request, buffer + SW_HTTP2_FRAME_HEADER_SIZE, sizeof(buffer) - SW_HTTP2_FRAME_HEADER_SIZE);
 	if (n <= 0)
 	{
 		swWarn("http2_client_build_header() failed.");
 		return;
 	}
-	if (post_data == NULL && request->getType() != HTTP_STREAM)
+	if (post_data == NULL && request->getType() == HTTP_POST)
 	{
 		swHttp2_set_frame_header(buffer, SW_HTTP2_TYPE_HEADERS, n, SW_HTTP2_FLAG_END_STREAM | SW_HTTP2_FLAG_END_HEADERS, request->getStreamId());
 	}
@@ -436,7 +468,6 @@ void http2_client_send_request(Object& zobject, swClient* cli, Request* request)
 	{
 		swHttp2_set_frame_header(buffer, SW_HTTP2_TYPE_HEADERS, n, SW_HTTP2_FLAG_END_HEADERS, request->getStreamId());
 	}
-
 	cli->send(cli, buffer, n + SW_HTTP2_FRAME_HEADER_SIZE, 0);
 
     if (post_data)
@@ -556,7 +587,6 @@ void http2_client_onFrame(Object& zobject, Object& socket, swClient* cli, char* 
 	int stream_id = ntohl((*(int *) (buf + 5))) & 0x7fffffff;
 	uint32_t length = swHttp2_get_length(buf);
 	buf += SW_HTTP2_FRAME_HEADER_SIZE;
-
 	char frame[SW_HTTP2_FRAME_HEADER_SIZE + SW_HTTP2_FRAME_PING_PAYLOAD_SIZE];
 
 	uint16_t id;
@@ -605,7 +635,7 @@ void http2_client_onFrame(Object& zobject, Object& socket, swClient* cli, char* 
 	else if (type == SW_HTTP2_TYPE_WINDOW_UPDATE)
 	{
 		client->window_size = ntohl(*(int *) buf);
-		swTraceLog(SW_TRACE_HTTP2, "update: window_size=%d.", hcc->window_size);
+		swHttp2_set_frame_header(frame, SW_HTTP2_TYPE_WINDOW_UPDATE, 0, SW_HTTP2_FLAG_ACK, stream_id);
 		return;
 	}
 	else if (type == SW_HTTP2_TYPE_PING)
@@ -636,20 +666,28 @@ void http2_client_onFrame(Object& zobject, Object& socket, swClient* cli, char* 
 	}
 	else if (type == SW_HTTP2_TYPE_DATA)
 	{
-//#ifdef SW_HAVE_ZLIB
-//        if (stream->gzip)
-//        {
-//            if (http_response_uncompress(&stream->gzip_stream, stream->gzip_buffer, buf, length) == SW_ERR)
-//            {
-//                return -1;
-//            }
-//            swString_append_ptr(stream->buffer, stream->gzip_buffer->str, stream->gzip_buffer->length);
-//        }
-//        else
-//#endif
+#ifdef SW_HAVE_ZLIB
+        if (request->isGzip())
+        {
+            if (http_response_uncompress(&request->gzip_stream, request->gzip_buffer, buf, length) == SW_ERR)
+            {
+                return;
+            }
+            swString_append_ptr(request->buffer, request->gzip_buffer->str, request->gzip_buffer->length);
+        }
+        else
+#endif
         {
             swString_append_ptr(request->buffer, buf, length);
         }
+	}
+	else if(type == SW_HTTP2_TYPE_RST_STREAM)
+	{
+		int error_code = htonl(*(int *) (buf));
+		Object* response = request->getResponse();
+		response->set("status", HTTP2_CLIENT_RST_STREAM);
+		request->runCallback(zobject);
+		client->delRequest(stream_id);
 	}
 	else
 	{
@@ -659,8 +697,8 @@ void http2_client_onFrame(Object& zobject, Object& socket, swClient* cli, char* 
 
 	if(request->getType() == HTTP_STREAM && type == SW_HTTP2_TYPE_DATA)
 	{
-		Object response = request->getResponse();
-		response.set("body", Variant(request->buffer->str, request->buffer->length));
+		Object* response = request->getResponse();
+		response->set("body", Variant(request->buffer->str, request->buffer->length));
 
 		request->runCallback(zobject);
 
@@ -668,9 +706,13 @@ void http2_client_onFrame(Object& zobject, Object& socket, swClient* cli, char* 
 	}
 	else if(request->getType() != HTTP_STREAM && (flags & SW_HTTP2_FLAG_END_STREAM))
 	{
-		Object& response = request->getResponse();
-		request->getResponse().set("body", Variant(request->buffer->str, request->buffer->length));
-
+		if(request->timer)
+		{
+			swTimer_del(&SwooleG.timer, request->timer);
+			request->timer = NULL;
+		}
+		Object* response = request->getResponse();
+		response->set("body", Variant(request->buffer->str, request->buffer->length));
 		request->runCallback(zobject);
 
 		client->delRequest(stream_id);

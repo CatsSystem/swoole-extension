@@ -31,6 +31,27 @@ extern "C"{
 using namespace php;
 using namespace std;
 
+struct TimeoutData
+{
+	Request* request;
+	Object* client;
+	Http2Client* h2cli;
+};
+
+typedef struct TimeoutData TimeoutData;
+
+static void http2_client_onRequestTimeout(swTimer *timer, swTimer_node *tnode)
+{
+	TimeoutData* data = (TimeoutData *) tnode->data;
+	Object* client = data->client;
+	Request* request = data->request;
+	Http2Client* http2client = data->h2cli;
+	Object* response = request->getResponse();
+	response->set("status", HTTP2_CLIENT_TIMEOUT);
+	request->runCallback(client->ptr());
+	http2client->delRequest(request->getStreamId());
+}
+
 PHPX_METHOD(http2_client, construct)
 {
     if (args.count() < 3)
@@ -79,7 +100,6 @@ PHPX_METHOD(http2_client, onConnect)
 	Object socket = _this.get("socket");
 	socket.exec("send", "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
 	swClient *cli = (swClient*)swoole_get_object(socket.ptr());
-
     cli->open_length_check = 1;
     cli->protocol.get_package_length = swHttp2_get_frame_length;
     cli->protocol.package_length_size = SW_HTTP2_FRAME_HEADER_SIZE;
@@ -87,22 +107,28 @@ PHPX_METHOD(http2_client, onConnect)
     http2_client_send_setting(cli);
 	Variant callback = _this.get("connect");
 	Args params;
-	params.append(socket);
+	params.append(_this);
+	params.append(socket.get("errCode"));
 	php::call(callback, params);
 }
 
 PHPX_METHOD(http2_client, onError)
 {
+	_this.set("connected", false);
 	Object socket = _this.get("socket");
 	Variant callback = _this.get("connect");
 	Args params;
-	params.append(_this.get("socket"));
+	params.append(_this);
+	params.append(socket.get("errCode"));
 	php::call(callback, params);
 }
 
 PHPX_METHOD(http2_client, onClose)
 {
-	std::cout << "onConnect" << std::endl;
+	_this.set("connected", false);
+	printf("onClose\n");
+	Http2Client* client = _this.oGet<Http2Client>("client","Http2Client");
+	client->disconnect(_this);
 }
 
 PHPX_METHOD(http2_client, connect)
@@ -110,12 +136,9 @@ PHPX_METHOD(http2_client, connect)
     float timeout = args[0].toFloat();
 	Variant callback = args[1];
 
-	Object socket = _this.get("socket");
-
 	_this.set("connect", callback);
 
 	Array recv, connect, error, close;
-
 	recv.append(_this);
 	recv.append("onReceive");
 	error.append(_this);
@@ -125,12 +148,14 @@ PHPX_METHOD(http2_client, connect)
 	connect.append(_this);
 	connect.append("onConnect");
 
+	Object socket = _this.get("socket");
+
 	socket.exec("on", "Receive", recv);
 	socket.exec("on", "Connect", connect);
 	socket.exec("on", "Error", error);
 	socket.exec("on", "Close", close);
 
-	socket.exec("connect", _this.get("host"), _this.get("port"));
+	socket.exec("connect", _this.get("host"), _this.get("port"), timeout);
 }
 
 PHPX_METHOD(http2_client, on)
@@ -149,13 +174,21 @@ PHPX_METHOD(http2_client, post)
         retval = false;
         return;
     }
-    string 	path 	= args[0].toString();
+    Variant path 	= args[0];
     Variant data 	= args[1];
     int 	timeout = args[2].toInt();
     Variant callback = args[3];
-
     Http2Client* client = _this.oGet<Http2Client>("client","Http2Client");
     Request* new_request = new Request(client->grantStreamId(), path, data.ptr(), callback, HTTP_POST);
+
+    TimeoutData* timeout_data = new TimeoutData();
+    timeout_data->client = &_this;
+    timeout_data->request = new_request;
+    timeout_data->h2cli = client;
+
+    php_swoole_check_timer((int) (timeout * 1000));
+    new_request->timer = SwooleG.timer.add(&SwooleG.timer, (int) (timeout * 1000), 0, (void*)timeout_data, http2_client_onRequestTimeout);
+
     client->addRequest(new_request);
 
     Object socket = _this.get("socket");
@@ -172,12 +205,21 @@ PHPX_METHOD(http2_client, get)
         retval = false;
         return;
     }
-    string 	path 	= args[0].toString();
+    Variant path 	= args[0];
     int 	timeout = args[1].toInt();
     Variant callback = args[2];
 
     Http2Client* client = _this.oGet<Http2Client>("client","Http2Client");
     Request* new_request = new Request(client->grantStreamId(), path, NULL, callback, HTTP_GET);
+
+    TimeoutData* timeout_data = new TimeoutData();
+	timeout_data->client = &_this;
+	timeout_data->request = new_request;
+	timeout_data->h2cli = client;
+
+    php_swoole_check_timer((int) (timeout * 1000));
+    new_request->timer = SwooleG.timer.add(&SwooleG.timer, (int) (timeout * 1000), 0, (void*)timeout_data, http2_client_onRequestTimeout);
+
     client->addRequest(new_request);
     Object socket = _this.get("socket");
 	swClient* cli = (swClient*)swoole_get_object(socket.ptr());
@@ -196,8 +238,8 @@ PHPX_METHOD(http2_client, openStream)
 
     string 	path 	= args[0].toString();
     uint32_t stream_id = client->grantStreamId();
-    Object stream = php::newObject("http2_client_stream", _this, Variant((long)stream_id));
-
+    Object stream = php::newObject("http2_client_stream");
+    stream.exec("init", _this, Variant((long)stream_id));
     Request* new_request = new Request(stream_id, path, NULL, stream, HTTP_STREAM);
     client->addRequest(new_request);
 
@@ -211,35 +253,38 @@ PHPX_METHOD(http2_client, openStream)
 
 PHPX_METHOD(http2_client, close)
 {
+	_this.set("connected", false);
 	Object socket = _this.get("socket");
-
 	socket.exec("close");
 }
 
-PHPX_METHOD(http2_client_stream, construct)
+PHPX_METHOD(http2_client_stream, init)
 {
 	Object client = args[0];
-
 	_this.set("stream_id", args[1].toInt());
 	_this.set("client", client);
 }
 
 PHPX_METHOD(http2_client_stream, on)
 {
-	string name = args[0].toString();
-	if(name != "receive" || name != "Receive")
+	String name = String(args[0].ptr());
+	if(name.equals("receive") || name.equals("Receive"))
+	{
+		Variant callback = args[1];
+		_this.set("receive", callback);
+	}
+	else
 	{
 		error(E_ERROR, "Only can set receive callback!");
 		return;
 	}
-	Variant callback = args[1];
-	_this.set("receive", callback);
 }
 
 PHPX_METHOD(http2_client_stream, push)
 {
 	Variant data 	= args[0];
-	Object socket = _this.get("socket");
+	Object client = _this.get("client");
+    Object socket = client.get("socket");
 	swClient *cli = (swClient*)swoole_get_object(socket.ptr());
 
 	http2_client_push_request(cli, _this.get("stream_id").toInt(), data.ptr());
@@ -251,9 +296,11 @@ PHPX_METHOD(http2_client_stream, close)
 	swClient *cli = (swClient*)swoole_get_object(socket.ptr());
 
 	http2_client_close_stream(cli, _this.get("stream_id").toInt());
+	Http2Client* client = _this.oGet<Http2Client>("client","Http2Client");
+	client->delRequest(_this.get("stream_id").toInt());
 }
 
-PHPX_METHOD(http2_client_response, construct)
+PHPX_METHOD(http2_client_response, __construct)
 {
 	Array header;
 	_this.set("statusCode", 0);
@@ -264,6 +311,12 @@ PHPX_METHOD(http2_client_response, construct)
 void Http2Client_dtor(zend_resource *res)
 {
     Http2Client *s = static_cast<Http2Client *>(res->ptr);
+    delete s;
+}
+
+void swTimer_node_dtor(zend_resource *res)
+{
+	swTimer_node *s = static_cast<swTimer_node *>(res->ptr);
     delete s;
 }
 
@@ -284,20 +337,22 @@ PHPX_EXTENSION()
         http2_client->addMethod(PHPX_ME(http2_client, onConnect));
         http2_client->addMethod(PHPX_ME(http2_client, onError));
         http2_client->addMethod(PHPX_ME(http2_client, onClose));
+        http2_client->addConstant("HTTP2_CLIENT_TIMEOUT", -2);
         extension->registerClass(http2_client);
 
         Class *http2_client_stream = new Class("http2_client_stream");
-        http2_client_stream->addMethod(PHPX_ME(http2_client_stream, construct), CONSTRUCT);
+        http2_client_stream->addMethod(PHPX_ME(http2_client_stream, init));
         http2_client_stream->addMethod(PHPX_ME(http2_client_stream, on));
         http2_client_stream->addMethod(PHPX_ME(http2_client_stream, push));
         http2_client_stream->addMethod(PHPX_ME(http2_client_stream, close));
         extension->registerClass(http2_client_stream);
 
         Class *http2_client_response = new Class("http2_client_response");
-        http2_client_response->addMethod(PHPX_ME(http2_client_stream, construct), CONSTRUCT);
+        http2_client_response->addMethod(PHPX_ME(http2_client_response, __construct) , CONSTRUCT);
         extension->registerClass(http2_client_response);
 
         extension->registerResource("Http2Client", Http2Client_dtor);
+        extension->registerResource("swTimer_node", swTimer_node_dtor);
     };
 
     extension->require("swoole");

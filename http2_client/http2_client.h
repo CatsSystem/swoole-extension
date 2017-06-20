@@ -27,6 +27,12 @@
 extern "C"{
 	#include "swoole.h"
 	#include "php_swoole.h"
+	#ifdef SW_HAVE_ZLIB
+	#include <zlib.h>
+	extern voidpf php_zlib_alloc(voidpf opaque, uInt items, uInt size);
+	extern void php_zlib_free(voidpf opaque, voidpf address);
+	extern int http_response_uncompress(z_stream *stream, swString *buffer, char *body, int length);
+	#endif
 }
 #include <nghttp2/nghttp2.h>
 
@@ -35,6 +41,10 @@ using namespace php;
 
 #define FOREACH_MAP(it, map) for((it)=(map)->begin(); (it)!=(map)->end(); ++(it))
 #define CPP_STRL(str) (str.c_str()), (str).length()
+
+#define HTTP2_CLIENT_OFFLINE	 -1
+#define HTTP2_CLIENT_TIMEOUT  	 -2
+#define HTTP2_CLIENT_RST_STREAM  -3
 
 enum HTTP_METHOD
 {
@@ -55,18 +65,13 @@ public:
 	Variant& getCallback();
 	HTTP_METHOD getType();
 
+	bool isGzip(){ return this->gzip;}
+	void openGzip(){ this->gzip = 1; }
+
 	void runCallback(const Object& client);
+	void runCallback(zval* client);
 
-//	void setStatus(int status){this->status = status;}
-//	int getStatus(){return status;}
-//
-//	void setHeaders(zval* header){this->headers = header;}
-//	zval* getHeaders(){return headers;}
-
-	Object& getResponse(){return this->response;}
-
-public:
-	swString* 	buffer;
+	Object* getResponse(){return &this->response;}
 
 private:
 	uint32_t 	stream_id;
@@ -74,9 +79,16 @@ private:
 	Variant 	uri;
 	zval* 		data;
 	Variant 	callback;
-//	int 		status = 0;
-//	zval* 		headers = NULL;
 	Object 		response;
+	uint8_t 	gzip = 0;
+
+public:
+	swString* 	buffer;
+	swTimer_node* 	timer = NULL;
+#ifdef SW_HAVE_ZLIB
+    z_stream gzip_stream;
+    swString *gzip_buffer = NULL;
+#endif
 };
 
 class Http2Client
@@ -102,11 +114,10 @@ public:
     uint32_t max_concurrent_streams = 0;
     uint32_t max_frame_size = 0;
     uint32_t max_header_list_size = 0;
-
 private:
 	uint32_t 					stream_id;
-    nghttp2_hd_inflater* 		inflater;
     map<uint32_t, Request*>* 	request_map;
+    nghttp2_hd_inflater* 		inflater;
 };
 
 void http2_client_onFrame(Object& zobject, Object& socket, swClient* cli, char* buf);
