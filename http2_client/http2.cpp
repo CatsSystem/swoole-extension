@@ -15,6 +15,7 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *******************************************************************************
  * Author: Lidanyang  <simonarthur2012@gmail.com>
+ * Copyright © 2017 Lidanyang <simonarthur2012@gmail.com>
  ******************************************************************************/
 
 #include "swoole.h"
