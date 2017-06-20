@@ -53,8 +53,7 @@ HTTP_GET = 1, HTTP_POST = 2, HTTP_STREAM = 3
 
 class Request {
 public:
-Request(uint32_t stream_id, const Variant& uri, zval* data,
-		const Variant& callback, HTTP_METHOD type);
+Request(uint32_t stream_id, const Variant& uri, zval* data, const Variant& callback, HTTP_METHOD type);
 ~Request();
 
 uint32_t getStreamId();
@@ -64,17 +63,17 @@ Variant& getCallback();
 HTTP_METHOD getType();
 
 bool isGzip() {
-	return this->gzip;
+    return this->gzip;
 }
 void openGzip() {
-	this->gzip = 1;
+    this->gzip = 1;
 }
 
 void runCallback(const Object& client);
 void runCallback(zval* client);
 
 Object* getResponse() {
-	return &this->response;
+    return &this->response;
 }
 
 private:
@@ -123,12 +122,9 @@ map<uint32_t, Request*>* request_map;
 nghttp2_hd_inflater* inflater;
 };
 
-void http2_client_onFrame(Object& zobject, Object& socket, swClient* cli,
-	char* buf);
-void http2_client_send_request(Object& zobject, swClient* cli,
-	Request* request);
-void http2_client_push_request(swClient* cli, uint32_t stream_id,
-	zval* post_data);
+void http2_client_onFrame(Object& zobject, Object& socket, swClient* cli, char* buf);
+void http2_client_send_request(Object& zobject, swClient* cli, Request* request);
+void http2_client_push_request(swClient* cli, uint32_t stream_id, zval* post_data);
 void http2_client_close_stream(swClient* cli, uint32_t stream_id);
 void http2_client_send_setting(swClient *cli);
 

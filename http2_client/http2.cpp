@@ -22,66 +22,63 @@
 #include "Connection.h"
 #include "http2.h"
 
-int swHttp2_parse_frame(swProtocol *protocol, swConnection *conn, char *data,
-		uint32_t length) {
-	int wait_body = 0;
-	int package_length = 0;
+int swHttp2_parse_frame(swProtocol *protocol, swConnection *conn, char *data, uint32_t length) {
+    int wait_body = 0;
+    int package_length = 0;
 
-	while (length > 0) {
-		if (wait_body) {
-			if (length >= package_length) {
-				protocol->onPackage(conn, data, package_length);
-				wait_body = 0;
-				data += package_length;
-				length -= package_length;
-				continue;
-			} else {
-				break;
-			}
-		} else {
-			package_length = protocol->get_package_length(protocol, conn, data,
-					length);
-			if (package_length < 0) {
-				return SW_ERR;
-			} else if (package_length == 0) {
-				return SW_OK;
-			} else {
-				wait_body = 1;
-			}
-		}
-	}
-	return SW_OK;
+    while (length > 0) {
+        if (wait_body) {
+            if (length >= package_length) {
+                protocol->onPackage(conn, data, package_length);
+                wait_body = 0;
+                data += package_length;
+                length -= package_length;
+                continue;
+            } else {
+                break;
+            }
+        } else {
+            package_length = protocol->get_package_length(protocol, conn, data, length);
+            if (package_length < 0) {
+                return SW_ERR;
+            } else if (package_length == 0) {
+                return SW_OK;
+            } else {
+                wait_body = 1;
+            }
+        }
+    }
+    return SW_OK;
 }
 
 int swHttp2_send_setting_frame(swProtocol *protocol, swConnection *conn) {
-	char setting_frame[SW_HTTP2_FRAME_HEADER_SIZE
-			+ SW_HTTP2_SETTING_OPTION_SIZE * 3];
-	char *p = setting_frame;
-	uint16_t id;
-	uint32_t value;
+    char setting_frame[SW_HTTP2_FRAME_HEADER_SIZE + SW_HTTP2_SETTING_OPTION_SIZE * 3];
+    char *p = setting_frame;
+    uint16_t id;
+    uint32_t value;
 
-	swHttp2_set_frame_header(p, SW_HTTP2_TYPE_SETTINGS,
-			SW_HTTP2_SETTING_OPTION_SIZE * 3, 0, 0);
-	p += SW_HTTP2_FRAME_HEADER_SIZE;
+    swHttp2_set_frame_header(p, SW_HTTP2_TYPE_SETTINGS,
+    SW_HTTP2_SETTING_OPTION_SIZE * 3, 0, 0);
+    p += SW_HTTP2_FRAME_HEADER_SIZE;
 
-	id = htons(SW_HTTP2_SETTINGS_MAX_CONCURRENT_STREAMS);
-	memcpy(p, &id, sizeof(id));
-	value = htonl(SW_HTTP2_MAX_CONCURRENT_STREAMS);
-	memcpy(p + 2, &value, sizeof(value));
-	p += SW_HTTP2_SETTING_OPTION_SIZE;
+    id = htons(SW_HTTP2_SETTINGS_MAX_CONCURRENT_STREAMS);
+    memcpy(p, &id, sizeof(id));
+    value = htonl(SW_HTTP2_MAX_CONCURRENT_STREAMS);
+    memcpy(p + 2, &value, sizeof(value));
+    p += SW_HTTP2_SETTING_OPTION_SIZE;
 
-	id = htons(SW_HTTP2_SETTINGS_INIT_WINDOW_SIZE);
-	memcpy(p, &id, sizeof(id));
-	value = htonl(SW_HTTP2_MAX_WINDOW);
-	memcpy(p + 2, &value, sizeof(value));
-	p += SW_HTTP2_SETTING_OPTION_SIZE;
+    id = htons(SW_HTTP2_SETTINGS_INIT_WINDOW_SIZE);
+    memcpy(p, &id, sizeof(id));
+    value = htonl(SW_HTTP2_MAX_WINDOW);
+    memcpy(p + 2, &value, sizeof(value));
+    p += SW_HTTP2_SETTING_OPTION_SIZE;
 
-	id = htons(SW_HTTP2_SETTINGS_MAX_FRAME_SIZE);
-	memcpy(p, &id, sizeof(id));
-	value = htonl(SW_HTTP2_MAX_FRAME_SIZE);
-	memcpy(p + 2, &value, sizeof(value));
+    id = htons(SW_HTTP2_SETTINGS_MAX_FRAME_SIZE);
+    memcpy(p, &id, sizeof(id));
+    value = htonl(SW_HTTP2_MAX_FRAME_SIZE);
+    memcpy(p + 2, &value, sizeof(value));
 
-	return swConnection_send(conn, setting_frame, sizeof(setting_frame), 0);
+    return swConnection_send(conn, setting_frame, sizeof(setting_frame), 0);
 }
 
 /**
@@ -95,10 +92,9 @@ int swHttp2_send_setting_frame(swProtocol *protocol, swConnection *conn) {
  |                   Frame Payload (0...)                      ...
  +---------------------------------------------------------------+
  */
-int swHttp2_get_frame_length(swProtocol *protocol, swConnection *conn,
-		char *buf, uint32_t length) {
-	if (length < SW_HTTP2_FRAME_HEADER_SIZE) {
-		return 0;
-	}
-	return swHttp2_get_length(buf) + SW_HTTP2_FRAME_HEADER_SIZE;
+int swHttp2_get_frame_length(swProtocol *protocol, swConnection *conn, char *buf, uint32_t length) {
+    if (length < SW_HTTP2_FRAME_HEADER_SIZE) {
+        return 0;
+    }
+    return swHttp2_get_length(buf) + SW_HTTP2_FRAME_HEADER_SIZE;
 }
