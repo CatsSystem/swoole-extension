@@ -452,7 +452,7 @@ void http2_client_push_request(swClient* cli, uint32_t stream_id, zval* post_dat
 
 void http2_client_close_stream(swClient* cli, uint32_t stream_id) {
     char buffer[8192];
-    swHttp2_set_frame_header(buffer, SW_HTTP2_TYPE_SETTINGS, 0, SW_HTTP2_FLAG_END_STREAM, stream_id);
+    swHttp2_set_frame_header(buffer, SW_HTTP2_TYPE_DATA, 0, SW_HTTP2_FLAG_END_STREAM, stream_id);
     cli->send(cli, buffer, SW_HTTP2_FRAME_HEADER_SIZE, 0);
 }
 

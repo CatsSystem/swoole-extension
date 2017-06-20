@@ -183,6 +183,8 @@ PHPX_METHOD(http2_client, post) {
     swClient *cli = (swClient*) swoole_get_object(socket.ptr());
 
     http2_client_send_request(_this, cli, new_request);
+    retval = true;
+    return;
 }
 
 PHPX_METHOD(http2_client, get) {
@@ -211,6 +213,8 @@ PHPX_METHOD(http2_client, get) {
     Object socket = _this.get("socket");
     swClient* cli = (swClient*) swoole_get_object(socket.ptr());
     http2_client_send_request(_this, cli, new_request);
+    retval = true;
+    return;
 }
 
 PHPX_METHOD(http2_client, openStream) {
@@ -237,9 +241,16 @@ PHPX_METHOD(http2_client, openStream) {
 }
 
 PHPX_METHOD(http2_client, close) {
+    printf("close\n");
     _this.set("connected", false);
     Object socket = _this.get("socket");
     socket.exec("close");
+}
+
+PHPX_METHOD(http2_client, closeStream) {
+    long stream_id = args[0].toInt();
+    Http2Client* http2 = _this.oGet<Http2Client>("client", "Http2Client");
+    http2->delRequest(stream_id);
 }
 
 PHPX_METHOD(http2_client_stream, init) {
@@ -248,33 +259,34 @@ PHPX_METHOD(http2_client_stream, init) {
     _this.set("client", client);
 }
 
-PHPX_METHOD(http2_client_stream, on) {
-    String name = String(args[0].ptr());
-    if (name.equals("receive") || name.equals("Receive")) {
-        Variant callback = args[1];
-        _this.set("receive", callback);
-    } else {
-        error(E_ERROR, "Only can set receive callback!");
-        return;
-    }
+PHPX_METHOD(http2_client_stream, onResult) {
+    Variant callback = args[0];
+    _this.set("receive", callback);
 }
 
 PHPX_METHOD(http2_client_stream, push) {
     Variant data = args[0];
     Object client = _this.get("client");
+    Http2Client* http2 = client.oGet<Http2Client>("client", "Http2Client");
+    if(!http2->getRequest(_this.get("stream_id").toInt()))
+    {
+        retval = false;
+        return;
+    }
     Object socket = client.get("socket");
     swClient *cli = (swClient*) swoole_get_object(socket.ptr());
 
     http2_client_push_request(cli, _this.get("stream_id").toInt(), data.ptr());
+    retval = true;
 }
 
 PHPX_METHOD(http2_client_stream, close) {
-    Object socket = _this.get("socket");
+    Object client = _this.get("client");
+    Object socket = client.get("socket");
     swClient *cli = (swClient*) swoole_get_object(socket.ptr());
 
     http2_client_close_stream(cli, _this.get("stream_id").toInt());
-    Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
-    client->delRequest(_this.get("stream_id").toInt());
+    client.exec("closeStream", _this.get("stream_id").toInt());
 }
 
 PHPX_METHOD(http2_client_response, __construct) {
@@ -301,6 +313,7 @@ PHPX_EXTENSION()
         http2_client->addMethod(PHPX_ME(http2_client, post));
         http2_client->addMethod(PHPX_ME(http2_client, get));
         http2_client->addMethod(PHPX_ME(http2_client, openStream));
+        http2_client->addMethod(PHPX_ME(http2_client, closeStream));
         http2_client->addMethod(PHPX_ME(http2_client, close));
         http2_client->addMethod(PHPX_ME(http2_client, onReceive));
         http2_client->addMethod(PHPX_ME(http2_client, onConnect));
@@ -310,7 +323,7 @@ PHPX_EXTENSION()
 
         Class *http2_client_stream = new Class("http2_client_stream");
         http2_client_stream->addMethod(PHPX_ME(http2_client_stream, init));
-        http2_client_stream->addMethod(PHPX_ME(http2_client_stream, on));
+        http2_client_stream->addMethod(PHPX_ME(http2_client_stream, onResult));
         http2_client_stream->addMethod(PHPX_ME(http2_client_stream, push));
         http2_client_stream->addMethod(PHPX_ME(http2_client_stream, close));
         extension->registerClass(http2_client_stream);
