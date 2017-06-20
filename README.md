@@ -23,6 +23,18 @@ $client->connect(1, function($client, $errCode){
     }
     // get请求，设置 1s 超时
     $client->get("/get", 1, function($client, $response){
+        if($response->status == HTTP2_CLIENT_OFFLINE)
+        {
+            //客户端连接断开
+        }
+        if($response->status == HTTP2_CLIENT_TIMEOUT)
+        {
+            //请求超时
+        }
+        if($response->status == HTTP2_CLIENT_RST_STREAM)
+        {
+            //当前请求被服务器断开
+        }
         if($response->status == 200)
         {
             var_dump($response->headers);

@@ -315,12 +315,6 @@ void Http2Client_dtor(zend_resource *res)
     delete s;
 }
 
-void swTimer_node_dtor(zend_resource *res)
-{
-	swTimer_node *s = static_cast<swTimer_node *>(res->ptr);
-    delete s;
-}
-
 PHPX_EXTENSION()
 {
     Extension *extension = new Extension("http2_client", "0.0.1");
@@ -338,7 +332,9 @@ PHPX_EXTENSION()
         http2_client->addMethod(PHPX_ME(http2_client, onConnect));
         http2_client->addMethod(PHPX_ME(http2_client, onError));
         http2_client->addMethod(PHPX_ME(http2_client, onClose));
-        http2_client->addConstant("HTTP2_CLIENT_TIMEOUT", -2);
+        http2_client->addConstant("HTTP2_CLIENT_OFFLINE", HTTP2_CLIENT_OFFLINE);
+        http2_client->addConstant("HTTP2_CLIENT_TIMEOUT", HTTP2_CLIENT_TIMEOUT);
+        http2_client->addConstant("HTTP2_CLIENT_RST_STREAM", HTTP2_CLIENT_RST_STREAM);
         extension->registerClass(http2_client);
 
         Class *http2_client_stream = new Class("http2_client_stream");
@@ -353,7 +349,9 @@ PHPX_EXTENSION()
         extension->registerClass(http2_client_response);
 
         extension->registerResource("Http2Client", Http2Client_dtor);
-        extension->registerResource("swTimer_node", swTimer_node_dtor);
+        extension->registerConstant("HTTP2_CLIENT_OFFLINE", HTTP2_CLIENT_OFFLINE);
+        extension->registerConstant("HTTP2_CLIENT_TIMEOUT", HTTP2_CLIENT_TIMEOUT);
+        extension->registerConstant("HTTP2_CLIENT_RST_STREAM", HTTP2_CLIENT_RST_STREAM);
     };
 
     extension->require("swoole");
