@@ -113,6 +113,7 @@ PHPX_METHOD(http2_client, onConnect) {
 
 PHPX_METHOD(http2_client, onError) {
     _this.set("connected", false);
+    printf("onError\n");
     Object socket = _this.get("socket");
     Variant callback = _this.get("connect");
     Args params;
@@ -123,6 +124,7 @@ PHPX_METHOD(http2_client, onError) {
 
 PHPX_METHOD(http2_client, onClose) {
     _this.set("connected", false);
+    printf("onClose\n");
     Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
     client->disconnect(_this);
 }
