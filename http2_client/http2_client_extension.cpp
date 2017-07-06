@@ -177,6 +177,7 @@ PHPX_METHOD(http2_client, on) {
 PHPX_METHOD(http2_client, post) {
     bool connected = _this.get("connected").toBool();
     if (!connected) {
+        printf("disconnect\n");
         retval = false;
         return;
     }
