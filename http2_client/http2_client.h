@@ -111,8 +111,8 @@ void delRequest(uint32_t stream_id);
 
 void disconnect(const Object& client);
 
-uint8_t getTimeout(){return timeout;}
-void setTimeout(){timeout = 1;}
+bool getTimeout(){return timeout;}
+void setTimeout(){timeout = true;}
 
 public:
 uint32_t window_size = 0;
@@ -123,7 +123,7 @@ private:
 uint32_t stream_id;
 map<uint32_t, Request*>* request_map;
 nghttp2_hd_inflater* inflater;
-uint8_t timeout = 0;
+bool timeout = false;
 };
 
 void http2_client_onFrame(Object& zobject, Object& socket, swClient* cli, char* buf);
