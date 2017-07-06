@@ -183,6 +183,7 @@ PHPX_METHOD(http2_client, post) {
     Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
     if(client->getTimeout())
     {
+        printf("timeout\n");
         retval = false;
         return;
     }
