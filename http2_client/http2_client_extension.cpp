@@ -95,6 +95,7 @@ PHPX_METHOD(http2_client, onReceive) {
 
 PHPX_METHOD(http2_client, onConnect) {
     _this.set("connected", true);
+    printf("onConnect\n");
     Object socket = _this.get("socket");
     socket.exec("send", "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
     swClient *cli = (swClient*) swoole_get_object(socket.ptr());
@@ -176,7 +177,7 @@ PHPX_METHOD(http2_client, on) {
 
 PHPX_METHOD(http2_client, post) {
     bool connected = _this.get("connected").toBool();
-    printf("%d\n", connected);
+    printf("connect=%d\n", connected);
     Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
     if (!connected || client->getTimeout()) {
         retval = false;
