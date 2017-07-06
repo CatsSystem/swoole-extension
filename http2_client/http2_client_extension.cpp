@@ -41,9 +41,19 @@ struct TimeoutData {
 typedef struct TimeoutData TimeoutData;
 
 static void http2_client_onRequestTimeout(swTimer *timer, swTimer_node *tnode) {
-    zval* client = (zval *) tnode->data;
-    Object socket(client);
-    socket.exec("close");
+    TimeoutData* data = (TimeoutData *) tnode->data;
+    Object* client = data->client;
+    Request* request = data->request;
+    Http2Client* http2client = data->h2cli;
+    http2client->setTimeout();
+    if(client->isNull())
+    {
+        return;
+    }
+    Object* response = request->getResponse();
+    response->set("status", HTTP2_CLIENT_TIMEOUT);
+    request->runCallback(client->ptr());
+    http2client->delRequest(request->getStreamId());
 }
 
 PHPX_METHOD(http2_client, construct) {
@@ -142,6 +152,21 @@ PHPX_METHOD(http2_client, connect) {
     socket.exec("connect", _this.get("host"), _this.get("port"), timeout);
 }
 
+PHPX_METHOD(http2_client, isConnected) {
+    Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
+    bool connected = _this.get("connected").toBool();
+    if (!connected) {
+        retval = false;
+        return;
+    }
+    if(client->getTimeout())
+    {
+        retval = false;
+        return;
+    }
+    retval = true;
+}
+
 PHPX_METHOD(http2_client, on) {
     string name = args[0].toString();
 
@@ -155,22 +180,32 @@ PHPX_METHOD(http2_client, post) {
         retval = false;
         return;
     }
+    Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
+    if(client->getTimeout())
+    {
+        retval = false;
+        return;
+    }
     Variant path = args[0];
     Variant data = args[1];
     int timeout = args[2].toInt();
     Variant callback = args[3];
-
-    Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
     Request* new_request = new Request(client->grantStreamId(), path, data.ptr(), callback, HTTP_POST);
-    Object socket = _this.get("socket");
 
+    TimeoutData* timeout_data = new TimeoutData();
+    timeout_data->client = &_this;
+    timeout_data->request = new_request;
+    timeout_data->h2cli = client;
 
     php_swoole_check_timer((int) (timeout * 1000));
-    new_request->timer = SwooleG.timer.add(&SwooleG.timer, (int) (timeout * 1000), 0, (void*) socket.ptr(),
+    new_request->timer = SwooleG.timer.add(&SwooleG.timer, (int) (timeout * 1000), 0, (void*) timeout_data,
             http2_client_onRequestTimeout);
 
     client->addRequest(new_request);
+
+    Object socket = _this.get("socket");
     swClient *cli = (swClient*) swoole_get_object(socket.ptr());
+
     http2_client_send_request(_this, cli, new_request);
     retval = true;
     return;
@@ -182,11 +217,16 @@ PHPX_METHOD(http2_client, get) {
         retval = false;
         return;
     }
+    Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
+    if(client->getTimeout())
+    {
+        retval = false;
+        return;
+    }
     Variant path = args[0];
     int timeout = args[1].toInt();
     Variant callback = args[2];
 
-    Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
     Request* new_request = new Request(client->grantStreamId(), path, NULL, callback, HTTP_GET);
 
     TimeoutData* timeout_data = new TimeoutData();
@@ -213,6 +253,11 @@ PHPX_METHOD(http2_client, openStream) {
         return;
     }
     Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
+    if(client->getTimeout())
+    {
+        retval = false;
+        return;
+    }
 
     string path = args[0].toString();
     uint32_t stream_id = client->grantStreamId();
@@ -298,6 +343,7 @@ PHPX_EXTENSION()
         http2_client->addMethod("__construct", http2_client_construct, CONSTRUCT);
         http2_client->addMethod(PHPX_ME(http2_client, on));
         http2_client->addMethod(PHPX_ME(http2_client, connect));
+        http2_client->addMethod(PHPX_ME(http2_client, isConnected));
         http2_client->addMethod(PHPX_ME(http2_client, post));
         http2_client->addMethod(PHPX_ME(http2_client, get));
         http2_client->addMethod(PHPX_ME(http2_client, openStream));
