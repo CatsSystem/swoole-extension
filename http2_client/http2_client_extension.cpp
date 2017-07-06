@@ -41,15 +41,9 @@ struct TimeoutData {
 typedef struct TimeoutData TimeoutData;
 
 static void http2_client_onRequestTimeout(swTimer *timer, swTimer_node *tnode) {
-    TimeoutData* data = (TimeoutData *) tnode->data;
-    Object* client = data->client;
-    Request* request = data->request;
-    Http2Client* http2client = data->h2cli;
-
-    Object* response = request->getResponse();
-    response->set("status", HTTP2_CLIENT_TIMEOUT);
-    request->runCallback(client->ptr());
-    http2client->delRequest(request->getStreamId());
+    zval* client = (zval *) tnode->data;
+    Object socket(client);
+    socket.exec("close");
 }
 
 PHPX_METHOD(http2_client, construct) {
@@ -78,6 +72,7 @@ PHPX_METHOD(http2_client, construct) {
     _this.set("ssl", is_ssl);
 
     Array header, cookie;
+    //header.set("keepalive", 1);
     _this.set("headers", header);
     _this.set("cookies", cookie);
 }
@@ -117,7 +112,6 @@ PHPX_METHOD(http2_client, onError) {
 
 PHPX_METHOD(http2_client, onClose) {
     _this.set("connected", false);
-    printf("onClose\n");
     Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
     client->disconnect(_this);
 }
@@ -165,23 +159,18 @@ PHPX_METHOD(http2_client, post) {
     Variant data = args[1];
     int timeout = args[2].toInt();
     Variant callback = args[3];
+
     Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
     Request* new_request = new Request(client->grantStreamId(), path, data.ptr(), callback, HTTP_POST);
+    Object socket = _this.get("socket");
 
-    TimeoutData* timeout_data = new TimeoutData();
-    timeout_data->client = &_this;
-    timeout_data->request = new_request;
-    timeout_data->h2cli = client;
 
     php_swoole_check_timer((int) (timeout * 1000));
-    new_request->timer = SwooleG.timer.add(&SwooleG.timer, (int) (timeout * 1000), 0, (void*) timeout_data,
+    new_request->timer = SwooleG.timer.add(&SwooleG.timer, (int) (timeout * 1000), 0, (void*) socket.ptr(),
             http2_client_onRequestTimeout);
 
     client->addRequest(new_request);
-
-    Object socket = _this.get("socket");
     swClient *cli = (swClient*) swoole_get_object(socket.ptr());
-
     http2_client_send_request(_this, cli, new_request);
     retval = true;
     return;
@@ -241,7 +230,6 @@ PHPX_METHOD(http2_client, openStream) {
 }
 
 PHPX_METHOD(http2_client, close) {
-    printf("close\n");
     _this.set("connected", false);
     Object socket = _this.get("socket");
     socket.exec("close");
