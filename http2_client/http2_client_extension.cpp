@@ -176,15 +176,9 @@ PHPX_METHOD(http2_client, on) {
 
 PHPX_METHOD(http2_client, post) {
     bool connected = _this.get("connected").toBool();
-    if (!connected) {
-        printf("disconnect\n");
-        retval = false;
-        return;
-    }
+    printf("%d\n", connected);
     Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
-    if(client->getTimeout())
-    {
-        printf("timeout\n");
+    if (!connected || client->getTimeout()) {
         retval = false;
         return;
     }
