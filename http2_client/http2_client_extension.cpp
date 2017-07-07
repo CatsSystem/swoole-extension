@@ -117,6 +117,9 @@ PHPX_METHOD(http2_client, onClose) {
     _this.set("connected", false);
     Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
     client->disconnect(_this);
+
+    Variant onClose = _this.get("close");
+    php::call(onClose);
 }
 
 PHPX_METHOD(http2_client, connect) {
