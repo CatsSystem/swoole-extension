@@ -88,7 +88,6 @@ PHPX_METHOD(http2_client, onReceive) {
 
 PHPX_METHOD(http2_client, onConnect) {
     _this.set("connected", true);
-    printf("onConnect\n");
     Object socket = _this.get("socket");
     socket.exec("send", "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
     swClient *cli = (swClient*) swoole_get_object(socket.ptr());
@@ -106,7 +105,6 @@ PHPX_METHOD(http2_client, onConnect) {
 
 PHPX_METHOD(http2_client, onError) {
     _this.set("connected", false);
-    printf("onError\n");
     Object socket = _this.get("socket");
     Variant callback = _this.get("connect");
     Args params;
@@ -117,7 +115,6 @@ PHPX_METHOD(http2_client, onError) {
 
 PHPX_METHOD(http2_client, onClose) {
     _this.set("connected", false);
-    printf("onClose\n");
     Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
     client->disconnect(_this);
 }
