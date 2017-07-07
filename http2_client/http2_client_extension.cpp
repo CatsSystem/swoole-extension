@@ -159,10 +159,8 @@ PHPX_METHOD(http2_client, isConnected) {
 }
 
 PHPX_METHOD(http2_client, on) {
-    string name = args[0].toString();
-
     Variant callback = args[1];
-    _this.set(name.c_str(), callback);
+    _this.set(args[0].toCString(), callback);
 }
 
 PHPX_METHOD(http2_client, post) {
