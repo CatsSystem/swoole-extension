@@ -43,7 +43,6 @@ static void http2_client_onRequestTimeout(swTimer *timer, swTimer_node *tnode) {
     TimeoutData* data = (TimeoutData *) tnode->data;
     Request* request = data->request;
     Http2Client* http2client = data->h2cli;
-    http2client->setTimeout();
     Object* response = request->getResponse();
     response->set("status", HTTP2_CLIENT_TIMEOUT);
     request->runCallback();
@@ -156,11 +155,6 @@ PHPX_METHOD(http2_client, isConnected) {
         retval = false;
         return;
     }
-    if(client->getTimeout())
-    {
-        retval = false;
-        return;
-    }
     retval = true;
 }
 
@@ -175,7 +169,7 @@ PHPX_METHOD(http2_client, post) {
     bool connected = _this.get("connected").toBool();
     printf("connect=%d\n", connected);
     Http2Client* client = _this.oGet<Http2Client>("client", "Http2Client");
-    if (!connected || client->getTimeout()) {
+    if (!connected) {
         retval = false;
         return;
     }
