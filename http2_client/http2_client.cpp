@@ -90,12 +90,12 @@ void Request::runCallback() {
         Object http2_client_stream = this->callback;
         Variant callback = http2_client_stream.get("receive");
         Args params;
-        params.append(NULL);
+        params.append(Variant());
         params.append(this->response);
         php::call(callback, params);
     } else {
         Args params;
-        params.append(NULL);
+        params.append(Variant());
         params.append(this->response);
         php::call(this->callback, params);
     }
