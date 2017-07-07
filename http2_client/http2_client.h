@@ -70,7 +70,7 @@ void openGzip() {
 }
 
 void runCallback(const Object& client);
-void runCallback(zval* client);
+void runCallback();
 
 Object* getResponse() {
     return &this->response;

@@ -85,17 +85,17 @@ void Request::runCallback(const Object& client) {
     }
 }
 
-void Request::runCallback(zval* client) {
+void Request::runCallback() {
     if (this->type == HTTP_STREAM) {
         Object http2_client_stream = this->callback;
         Variant callback = http2_client_stream.get("receive");
         Args params;
-        params.append(client);
+        params.append(NULL);
         params.append(this->response);
         php::call(callback, params);
     } else {
         Args params;
-        params.append(client);
+        params.append(NULL);
         params.append(this->response);
         php::call(this->callback, params);
     }

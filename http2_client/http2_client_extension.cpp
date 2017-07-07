@@ -34,7 +34,6 @@ using namespace std;
 
 struct TimeoutData {
     Request* request;
-    Object* client;
     Http2Client* h2cli;
 };
 
@@ -42,17 +41,12 @@ typedef struct TimeoutData TimeoutData;
 
 static void http2_client_onRequestTimeout(swTimer *timer, swTimer_node *tnode) {
     TimeoutData* data = (TimeoutData *) tnode->data;
-    Object* client = data->client;
     Request* request = data->request;
     Http2Client* http2client = data->h2cli;
     http2client->setTimeout();
-    if(client->isNull())
-    {
-        return;
-    }
     Object* response = request->getResponse();
     response->set("status", HTTP2_CLIENT_TIMEOUT);
-    request->runCallback(client->ptr());
+    request->runCallback();
     http2client->delRequest(request->getStreamId());
 }
 
@@ -192,7 +186,6 @@ PHPX_METHOD(http2_client, post) {
     Request* new_request = new Request(client->grantStreamId(), path, data.ptr(), callback, HTTP_POST);
 
     TimeoutData* timeout_data = new TimeoutData();
-    timeout_data->client = &_this;
     timeout_data->request = new_request;
     timeout_data->h2cli = client;
 
@@ -229,7 +222,6 @@ PHPX_METHOD(http2_client, get) {
     Request* new_request = new Request(client->grantStreamId(), path, NULL, callback, HTTP_GET);
 
     TimeoutData* timeout_data = new TimeoutData();
-    timeout_data->client = &_this;
     timeout_data->request = new_request;
     timeout_data->h2cli = client;
 
